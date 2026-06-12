@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SawitRipe - Deteksi Kematangan Kelapa Sawit</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="background-gradient"></div>
+    
+    <div class="container">
+        <header>
+            <h1>SawitRipe</h1>
+            <p>Sistem Pintar Analisis Kematangan Berbasis Tekstur & Warna (GLCM, HSV & K-Means)</p>
+        </header>
+
+        <main>
+            <div class="card upload-card">
+                <div class="dropzone" id="dropzone">
+                    <div class="icon">🌴</div>
+                    <h2>Unggah Foto Kelapa Sawit</h2>
+                    <p>Seret & jatuhkan gambar di sini atau klik untuk memilih</p>
+                    <input type="file" id="file-input" accept="image/jpeg, image/png, image/jpg" hidden>
+                </div>
+                <div class="error-message" id="error-message"></div>
+                
+                <div class="preview-container" id="preview-container" style="display: none;">
+                    <img id="image-preview" src="" alt="Preview">
+                    <button class="btn-reset" id="btn-reset">Hapus Gambar</button>
+                </div>
+            </div>
+
+            <div class="card result-card" id="result-card" style="display: none;">
+                <div class="validation-badges">
+                    <div class="status-badge" id="validation-status">Validasi: Memproses...</div>
+                    <div class="status-badge hsv-status" id="hsv-validation-status" style="display: none;">🎨 Warna: Memeriksa...</div>
+                </div>
+                
+                <div class="ripeness-result" id="ripeness-result">
+                    <h3 class="label">Deteksi Kematangan</h3>
+                    <div class="badge" id="ripeness-badge">Memproses...</div>
+                </div>
+
+                <!-- GLCM Texture Metrics -->
+                <div class="glcm-metrics">
+                    <h3>🔬 Metrik Tekstur GLCM</h3>
+                    <p class="metrics-desc">Menganalisis pola tekstur permukaan buah sawit menggunakan Gray-Level Co-occurrence Matrix.</p>
+                    <div class="grid-metrics">
+                        <div class="metric-box">
+                            <span class="metric-name">Contrast</span>
+                            <span class="metric-value" id="val-contrast">-</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-name">Dissimilarity</span>
+                            <span class="metric-value" id="val-dissimilarity">-</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-name">Homogeneity</span>
+                            <span class="metric-value" id="val-homogeneity">-</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-name">Energy</span>
+                            <span class="metric-value" id="val-energy">-</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-name">Correlation</span>
+                            <span class="metric-value" id="val-correlation">-</span>
+                        </div>
+                        <div class="metric-box">
+                            <span class="metric-name">ASM</span>
+                            <span class="metric-value" id="val-asm">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- HSV Color Metrics -->
+                <div class="hsv-metrics">
+                    <h3>🎨 Distribusi Warna HSV</h3>
+                    <p class="metrics-desc">Menganalisis distribusi warna buah sawit menggunakan ruang warna Hue-Saturation-Value.</p>
+                    <div class="hsv-channels">
+                        <div class="hsv-channel channel-hue">
+                            <h4>Hue <span class="channel-hint">(Jenis Warna)</span></h4>
+                            <div class="grid-metrics grid-3">
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Mean</span>
+                                    <span class="metric-value hsv-value" id="val-mean-h">-</span>
+                                </div>
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Std Dev</span>
+                                    <span class="metric-value hsv-value" id="val-std-h">-</span>
+                                </div>
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Skewness</span>
+                                    <span class="metric-value hsv-value" id="val-skew-h">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hsv-channel channel-saturation">
+                            <h4>Saturation <span class="channel-hint">(Kekuatan Warna)</span></h4>
+                            <div class="grid-metrics grid-3">
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Mean</span>
+                                    <span class="metric-value hsv-value" id="val-mean-s">-</span>
+                                </div>
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Std Dev</span>
+                                    <span class="metric-value hsv-value" id="val-std-s">-</span>
+                                </div>
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Skewness</span>
+                                    <span class="metric-value hsv-value" id="val-skew-s">-</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hsv-channel channel-value">
+                            <h4>Value <span class="channel-hint">(Kecerahan)</span></h4>
+                            <div class="grid-metrics grid-3">
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Mean</span>
+                                    <span class="metric-value hsv-value" id="val-mean-v">-</span>
+                                </div>
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Std Dev</span>
+                                    <span class="metric-value hsv-value" id="val-std-v">-</span>
+                                </div>
+                                <div class="metric-box hsv-box">
+                                    <span class="metric-name">Skewness</span>
+                                    <span class="metric-value hsv-value" id="val-skew-v">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="result-pca-container" id="result-pca-container" style="display: none; margin-top: 2rem; background: rgba(255,255,255,0.7); padding: 1rem; border-radius: 12px; text-align: center;">
+                    <h3 style="margin-bottom: 0.5rem; font-size: 1.1rem; color: var(--text-primary);">Visualisasi Persebaran Fitur (PCA Scatter Plot)</h3>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">Titik-titik ini adalah 15 fitur (6 GLCM + 9 HSV) yang direduksi menjadi 2 sumbu agar terlihat pola pengelompokannya secara visual. <br><strong>Bintang (⭐)</strong> menunjukkan posisi gambar yang baru saja Anda upload.</p>
+                    <div style="position: relative; height: 300px; width: 100%;">
+                        <canvas id="livePcaChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DASHBOARD ANALYTICS -->
+            <div class="card dashboard-card">
+                <header class="dashboard-header">
+                    <h2>📊 Dashboard Evaluasi (Unsupervised)</h2>
+                    <p>Menganalisis Kualitas Pemisahan K-Means & Distribusi Klaster (GLCM + HSV)</p>
+                </header>
+
+                <div class="eval-grid">
+                    <div class="eval-box">
+                        <span class="eval-title">Silhouette Score</span>
+                        <span class="eval-value" id="sil-score">Memuat...</span>
+                        <p class="eval-desc">Mendekati 1 berarti pemisahan antar-klaster sangat baik.</p>
+                    </div>
+                    <div class="eval-box feature-info-box">
+                        <span class="eval-title">Total Fitur</span>
+                        <span class="eval-value" id="total-features">15</span>
+                        <p class="eval-desc">6 GLCM (Tekstur) + 9 HSV (Warna)</p>
+                    </div>
+                </div>
+                
+                <div class="cluster-description">
+                    <h3>Pemetaan Klaster Visual</h3>
+                    <ul id="cluster-mapping-list">
+                        <li>Memuat...</li>
+                    </ul>
+                </div>
+
+                <div class="charts-grid" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem;">
+                    <div class="chart-container" style="flex: 1 1 300px; max-width: 400px; width: 100%;">
+                        <h3>Distribusi Data Latih</h3>
+                        <canvas id="trainDistChart"></canvas>
+                    </div>
+                    <div class="chart-container" style="flex: 1 1 300px; max-width: 400px; width: 100%;">
+                        <h3>Distribusi Prediksi (Data Uji)</h3>
+                        <canvas id="testDistChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="chart-container full-width">
+                    <h3>Visualisasi Persebaran Fitur (PCA Scatter Plot)</h3>
+                    <p class="eval-desc" style="text-align:center; margin-bottom: 1rem;">Titik-titik ini adalah 15 fitur (6 GLCM + 9 HSV) yang direduksi menjadi 2 sumbu agar terlihat pola pengelompokannya secara visual.</p>
+                    <canvas id="pcaScatterChart"></canvas>
+                </div>
+                
+                <div class="chart-container full-width" style="margin-top: 2rem;">
+                    <h3>Detail Prediksi Data Uji (Test Dataset)</h3>
+                    <div style="max-height: 300px; overflow-y: auto; background: rgba(255,255,255,0.8); border-radius: 12px; padding: 1rem; border: 1px solid rgba(0,0,0,0.1);">
+                        <ul id="test-predictions-list" style="list-style: none; padding-left: 0;">
+                            <li>Memuat data uji...</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}?v=3"></script>
+</body>
+</html>
