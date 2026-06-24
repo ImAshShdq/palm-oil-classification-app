@@ -96,6 +96,10 @@ document.addEventListener('DOMContentLoaded', () => {
         ripenessBadge.className = 'badge';
         resetMetrics();
 
+        // Hide confidence section during loading
+        const confidenceSection = document.getElementById('confidence-section');
+        if (confidenceSection) confidenceSection.style.display = 'none';
+
         const formData = new FormData();
         formData.append('image', file);
 
@@ -152,6 +156,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ripenessBadge.className = 'badge';
             }
 
+            // Confidence Score
+            if (data.confidence !== undefined && data.probabilities) {
+                showConfidence(data.confidence, data.probabilities, data.label);
+            }
+
             // GLCM Metrics
             if (data.features) {
                 updateGlcmMetrics(data.features);
@@ -168,7 +177,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (pcaContainer) {
                     pcaContainer.style.display = 'block';
                 }
-                drawLivePcaChart(data.pca_x, data.pca_y, data.cluster_id);
+                drawLivePcaChart(data.pca_x, data.pca_y, data.predicted_label);
             }
         })
         .catch(err => {
@@ -176,6 +185,53 @@ document.addEventListener('DOMContentLoaded', () => {
             validationStatus.textContent = 'Error koneksi ke server';
             ripenessBadge.textContent = 'ERROR';
         });
+    }
+
+    function showConfidence(confidence, probabilities, predictedLabel) {
+        const section = document.getElementById('confidence-section');
+        const bar = document.getElementById('confidence-bar');
+        const text = document.getElementById('confidence-text');
+        const grid = document.getElementById('probability-grid');
+
+        if (!section || !bar || !text || !grid) return;
+
+        section.style.display = 'block';
+
+        // Animate confidence bar
+        const pct = (confidence * 100).toFixed(1);
+        bar.style.width = pct + '%';
+        text.textContent = pct + '%';
+
+        // Color based on confidence level
+        if (confidence >= 0.8) {
+            bar.className = 'confidence-bar confidence-high';
+        } else if (confidence >= 0.5) {
+            bar.className = 'confidence-bar confidence-medium';
+        } else {
+            bar.className = 'confidence-bar confidence-low';
+        }
+
+        // Probability breakdown per class
+        grid.innerHTML = '';
+        const colorMap = {
+            'Matang': 'var(--color-matang)',
+            'Mengkal': 'var(--color-mengkal)',
+            'Mentah': 'var(--color-mentah)',
+        };
+
+        for (const [className, prob] of Object.entries(probabilities)) {
+            const item = document.createElement('div');
+            item.className = 'probability-item';
+            const isActive = className === predictedLabel;
+            item.innerHTML = `
+                <span class="prob-label" style="${isActive ? 'font-weight:700;' : ''}">${className}</span>
+                <div class="prob-bar-bg">
+                    <div class="prob-bar-fill" style="width: ${(prob * 100).toFixed(1)}%; background: ${colorMap[className] || '#94a3b8'};"></div>
+                </div>
+                <span class="prob-value" style="${isActive ? 'font-weight:700;' : ''}">${(prob * 100).toFixed(1)}%</span>
+            `;
+            grid.appendChild(item);
+        }
     }
 
     function updateGlcmMetrics(f) {
@@ -224,6 +280,10 @@ document.addEventListener('DOMContentLoaded', () => {
         resultCard.style.display = 'none';
         hideError();
 
+        // Reset confidence section
+        const confidenceSection = document.getElementById('confidence-section');
+        if (confidenceSection) confidenceSection.style.display = 'none';
+
         // Reset PCA Container and Chart Instance
         const pcaContainer = document.getElementById('result-pca-container');
         if (pcaContainer) {
@@ -250,25 +310,87 @@ function fetchDashboardData() {
             return;
         }
         
-        // Update Silhouette Score
-        const silScoreEl = document.getElementById('sil-score');
-        if (silScoreEl) {
-            silScoreEl.textContent = data.silhouette_score.toFixed(3);
+        // Update Accuracy Score
+        const accEl = document.getElementById('test-accuracy');
+        if (accEl && data.test_metrics) {
+            accEl.textContent = (data.test_metrics.accuracy * 100).toFixed(1) + '%';
         }
 
-        // Update Total Features
-        const totalFeatEl = document.getElementById('total-features');
-        if (totalFeatEl && data.feature_info) {
-            totalFeatEl.textContent = data.feature_info.total_features;
+        // Update F1 Score
+        const f1El = document.getElementById('test-f1');
+        if (f1El && data.test_metrics) {
+            f1El.textContent = (data.test_metrics.f1_score * 100).toFixed(1) + '%';
+        }
+
+        // Update Best K
+        const kEl = document.getElementById('best-k');
+        if (kEl && data.best_k) {
+            kEl.textContent = 'K=' + data.best_k;
+        }
+
+        // Update Per-Class Metrics
+        const perClassGrid = document.getElementById('per-class-grid');
+        if (perClassGrid && data.test_metrics && data.test_metrics.per_class) {
+            perClassGrid.innerHTML = '';
+            const classColors = {
+                'Matang': 'var(--color-matang)',
+                'Mengkal': 'var(--color-mengkal)',
+                'Mentah': 'var(--color-mentah)',
+            };
+            for (const [className, metrics] of Object.entries(data.test_metrics.per_class)) {
+                const card = document.createElement('div');
+                card.className = 'per-class-card';
+                card.style.borderLeftColor = classColors[className] || '#94a3b8';
+                card.innerHTML = `
+                    <h4 style="color: ${classColors[className] || '#94a3b8'}; margin-bottom: 0.5rem;">${className}</h4>
+                    <div class="per-class-metrics-row">
+                        <div><span class="metric-name">Precision</span><span class="metric-value" style="color: ${classColors[className]};">${(metrics.precision * 100).toFixed(1)}%</span></div>
+                        <div><span class="metric-name">Recall</span><span class="metric-value" style="color: ${classColors[className]};">${(metrics.recall * 100).toFixed(1)}%</span></div>
+                        <div><span class="metric-name">F1</span><span class="metric-value" style="color: ${classColors[className]};">${(metrics.f1_score * 100).toFixed(1)}%</span></div>
+                    </div>
+                `;
+                perClassGrid.appendChild(card);
+            }
+        }
+
+        // Update Confusion Matrix
+        const cmContainer = document.getElementById('confusion-matrix-container');
+        if (cmContainer && data.test_confusion_matrix && data.test_confusion_matrix.length > 0) {
+            const labels = ['Matang', 'Mengkal', 'Mentah'];
+            const cm = data.test_confusion_matrix;
+            
+            let html = '<table class="confusion-table"><thead><tr><th></th>';
+            labels.forEach(l => html += `<th class="cm-header">${l}</th>`);
+            html += '</tr></thead><tbody>';
+            
+            // Find max value for color intensity
+            let maxVal = 0;
+            cm.forEach(row => row.forEach(val => { if (val > maxVal) maxVal = val; }));
+            
+            for (let i = 0; i < cm.length; i++) {
+                html += `<tr><td class="cm-row-label">${labels[i]}</td>`;
+                for (let j = 0; j < cm[i].length; j++) {
+                    const val = cm[i][j];
+                    const intensity = maxVal > 0 ? val / maxVal : 0;
+                    const isDiag = i === j;
+                    const bgColor = isDiag 
+                        ? `rgba(16, 185, 129, ${0.15 + intensity * 0.6})` 
+                        : (val > 0 ? `rgba(239, 68, 68, ${0.1 + intensity * 0.4})` : 'transparent');
+                    html += `<td class="cm-cell" style="background: ${bgColor}; font-weight: ${isDiag ? '700' : '400'};">${val}</td>`;
+                }
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            cmContainer.innerHTML = html;
         }
 
         // Update Mapping Description
         const listEl = document.getElementById('cluster-mapping-list');
-        if (listEl && data.cluster_mapping) {
+        if (listEl && data.label_mapping) {
             listEl.innerHTML = '';
-            for (const [key, val] of Object.entries(data.cluster_mapping)) {
+            for (const [key, val] of Object.entries(data.label_mapping)) {
                 const li = document.createElement('li');
-                li.innerHTML = `<strong>K${key}:</strong> ${val}`;
+                li.innerHTML = `<strong>Label ${key}:</strong> ${val}`;
                 listEl.appendChild(li);
             }
         }
@@ -282,7 +404,7 @@ function fetchDashboardData() {
             new Chart(ctxTrain, {
                 type: 'bar',
                 data: {
-                    labels: ['Matang (K0)', 'Mengkal (K1)', 'Mentah (K2)'],
+                    labels: ['Matang', 'Mengkal', 'Mentah'],
                     datasets: [{
                         label: 'Jumlah Gambar Latih',
                         data: [data.train_distribution['0']||0, data.train_distribution['1']||0, data.train_distribution['2']||0],
@@ -301,7 +423,7 @@ function fetchDashboardData() {
             new Chart(ctxTest, {
                 type: 'bar',
                 data: {
-                    labels: ['Matang (K0)', 'Mengkal (K1)', 'Mentah (K2)'],
+                    labels: ['Matang', 'Mengkal', 'Mentah'],
                     datasets: [{
                         label: 'Jumlah Prediksi Test',
                         data: [data.test_distribution['0']||0, data.test_distribution['1']||0, data.test_distribution['2']||0],
@@ -314,19 +436,20 @@ function fetchDashboardData() {
             });
         }
 
-        // Scatter Plot
+        // Scatter Plot (using ground truth labels now)
         if (data.pca_scatter) {
             const ctxScatter = document.getElementById('pcaScatterChart').getContext('2d');
             
             const datasets = [
-                { label: 'Matang (K0)', data: [], backgroundColor: bgColors[0] },
-                { label: 'Mengkal (K1)', data: [], backgroundColor: bgColors[1] },
-                { label: 'Mentah (K2)', data: [], backgroundColor: bgColors[2] }
+                { label: 'Matang', data: [], backgroundColor: bgColors[0] },
+                { label: 'Mengkal', data: [], backgroundColor: bgColors[1] },
+                { label: 'Mentah', data: [], backgroundColor: bgColors[2] }
             ];
 
             data.pca_scatter.forEach(pt => {
-                if (datasets[pt.cluster]) {
-                    datasets[pt.cluster].data.push({x: pt.x, y: pt.y});
+                const labelIdx = pt.label !== undefined ? pt.label : pt.cluster;
+                if (datasets[labelIdx]) {
+                    datasets[labelIdx].data.push({x: pt.x, y: pt.y});
                 }
             });
 
@@ -353,7 +476,20 @@ function fetchDashboardData() {
                     li.style.marginBottom = '0.5rem';
                     li.style.borderBottom = '1px solid #e2e8f0';
                     li.style.paddingBottom = '0.5rem';
-                    li.innerHTML = `<strong>${item.filename}</strong> = <span style="color: ${borderColors[item.cluster]}; font-weight: 600;">${item.label}</span> <em>(K${item.cluster})</em>`;
+                    
+                    const predLabel = item.predicted_label !== undefined ? item.predicted_label : item.cluster;
+                    const predName = item.predicted_name || item.label;
+                    const trueName = item.true_name || '';
+                    const confidence = item.confidence !== undefined ? ` (${(item.confidence*100).toFixed(1)}%)` : '';
+                    const correct = item.correct !== undefined ? (item.correct ? ' ✅' : ' ❌') : '';
+                    const color = borderColors[predLabel] || '#94a3b8';
+                    
+                    let html = `<strong>${item.filename}</strong> → `;
+                    html += `<span style="color: ${color}; font-weight: 600;">${predName}</span>${confidence}${correct}`;
+                    if (trueName && item.correct === false) {
+                        html += ` <em style="color: #94a3b8;">(asli: ${trueName})</em>`;
+                    }
+                    li.innerHTML = html;
                     predListEl.appendChild(li);
                 });
             }
@@ -364,7 +500,7 @@ function fetchDashboardData() {
 
 let liveChartInstance = null;
 
-function drawLivePcaChart(px, py, pCluster) {
+function drawLivePcaChart(px, py, pLabel) {
     fetch('/api/dashboard_data')
     .then(res => res.json())
     .then(data => {
@@ -373,14 +509,15 @@ function drawLivePcaChart(px, py, pCluster) {
         const bgColors = ['rgba(16, 185, 129, 0.4)', 'rgba(245, 158, 11, 0.4)', 'rgba(239, 68, 68, 0.4)'];
         
         const datasets = [
-            { label: 'Matang (K0)', data: [], backgroundColor: bgColors[0], pointRadius: 3, order: 2 },
-            { label: 'Mengkal (K1)', data: [], backgroundColor: bgColors[1], pointRadius: 3, order: 2 },
-            { label: 'Mentah (K2)', data: [], backgroundColor: bgColors[2], pointRadius: 3, order: 2 }
+            { label: 'Matang', data: [], backgroundColor: bgColors[0], pointRadius: 3, order: 2 },
+            { label: 'Mengkal', data: [], backgroundColor: bgColors[1], pointRadius: 3, order: 2 },
+            { label: 'Mentah', data: [], backgroundColor: bgColors[2], pointRadius: 3, order: 2 }
         ];
 
         data.pca_scatter.forEach(pt => {
-            if (datasets[pt.cluster]) {
-                datasets[pt.cluster].data.push({x: pt.x, y: pt.y});
+            const labelIdx = pt.label !== undefined ? pt.label : pt.cluster;
+            if (datasets[labelIdx]) {
+                datasets[labelIdx].data.push({x: pt.x, y: pt.y});
             }
         });
 

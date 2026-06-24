@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SawitRipe - Deteksi Kematangan Kelapa Sawit</title>
+    <meta name="description" content="Sistem Pintar Klasifikasi Kematangan Buah Kelapa Sawit Berbasis GLCM, HSV, dan KNN">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -14,7 +15,7 @@
     <div class="container">
         <header>
             <h1>SawitRipe</h1>
-            <p>Sistem Pintar Analisis Kematangan Berbasis Tekstur & Warna (GLCM, HSV & K-Means)</p>
+            <p>Sistem Pintar Klasifikasi Kematangan Berbasis Tekstur & Warna (GLCM, HSV & KNN)</p>
         </header>
 
         <main>
@@ -42,6 +43,17 @@
                 <div class="ripeness-result" id="ripeness-result">
                     <h3 class="label">Deteksi Kematangan</h3>
                     <div class="badge" id="ripeness-badge">Memproses...</div>
+                </div>
+
+                <!-- Confidence Score -->
+                <div class="confidence-section" id="confidence-section" style="display: none;">
+                    <h3>📊 Confidence Score</h3>
+                    <div class="confidence-bar-container">
+                        <div class="confidence-bar" id="confidence-bar">
+                            <span class="confidence-text" id="confidence-text">0%</span>
+                        </div>
+                    </div>
+                    <div class="probability-grid" id="probability-grid"></div>
                 </div>
 
                 <!-- GLCM Texture Metrics -->
@@ -147,25 +159,47 @@
             <!-- DASHBOARD ANALYTICS -->
             <div class="card dashboard-card">
                 <header class="dashboard-header">
-                    <h2>📊 Dashboard Evaluasi (Unsupervised)</h2>
-                    <p>Menganalisis Kualitas Pemisahan K-Means & Distribusi Klaster (GLCM + HSV)</p>
+                    <h2>📊 Dashboard Evaluasi Model KNN (Supervised)</h2>
+                    <p>Metrik Akurasi, Confusion Matrix, & Distribusi Data (GLCM + HSV)</p>
                 </header>
 
                 <div class="eval-grid">
                     <div class="eval-box">
-                        <span class="eval-title">Silhouette Score</span>
-                        <span class="eval-value" id="sil-score">Memuat...</span>
-                        <p class="eval-desc">Mendekati 1 berarti pemisahan antar-klaster sangat baik.</p>
+                        <span class="eval-title">Accuracy (Test)</span>
+                        <span class="eval-value" id="test-accuracy">Memuat...</span>
+                        <p class="eval-desc">Persentase prediksi yang benar pada data uji.</p>
+                    </div>
+                    <div class="eval-box eval-box-secondary">
+                        <span class="eval-title">F1 Score (Test)</span>
+                        <span class="eval-value" id="test-f1">Memuat...</span>
+                        <p class="eval-desc">Harmonik rata-rata Precision & Recall.</p>
                     </div>
                     <div class="eval-box feature-info-box">
-                        <span class="eval-title">Total Fitur</span>
-                        <span class="eval-value" id="total-features">15</span>
-                        <p class="eval-desc">6 GLCM (Tekstur) + 9 HSV (Warna)</p>
+                        <span class="eval-title">Nilai K (KNN)</span>
+                        <span class="eval-value" id="best-k">-</span>
+                        <p class="eval-desc">Jumlah tetangga terbaik dari CV.</p>
+                    </div>
+                </div>
+
+                <!-- Per-class metrics -->
+                <div class="per-class-section">
+                    <h3>📋 Metrik Per Kelas</h3>
+                    <div class="per-class-grid" id="per-class-grid">
+                        <p>Memuat...</p>
+                    </div>
+                </div>
+                
+                <!-- Confusion Matrix -->
+                <div class="confusion-matrix-section">
+                    <h3>🧮 Confusion Matrix (Data Uji)</h3>
+                    <p class="metrics-desc" style="text-align: center;">Baris = Label Asli, Kolom = Prediksi KNN</p>
+                    <div class="confusion-matrix-container" id="confusion-matrix-container">
+                        <p>Memuat...</p>
                     </div>
                 </div>
                 
                 <div class="cluster-description">
-                    <h3>Pemetaan Klaster Visual</h3>
+                    <h3>Pemetaan Label</h3>
                     <ul id="cluster-mapping-list">
                         <li>Memuat...</li>
                     </ul>
@@ -173,7 +207,7 @@
 
                 <div class="charts-grid" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 2rem;">
                     <div class="chart-container" style="flex: 1 1 300px; max-width: 400px; width: 100%;">
-                        <h3>Distribusi Data Latih</h3>
+                        <h3>Distribusi Data Latih (Ground Truth)</h3>
                         <canvas id="trainDistChart"></canvas>
                     </div>
                     <div class="chart-container" style="flex: 1 1 300px; max-width: 400px; width: 100%;">
@@ -184,7 +218,7 @@
                 
                 <div class="chart-container full-width">
                     <h3>Visualisasi Persebaran Fitur (PCA Scatter Plot)</h3>
-                    <p class="eval-desc" style="text-align:center; margin-bottom: 1rem;">Titik-titik ini adalah 15 fitur (6 GLCM + 9 HSV) yang direduksi menjadi 2 sumbu agar terlihat pola pengelompokannya secara visual.</p>
+                    <p class="eval-desc" style="text-align:center; margin-bottom: 1rem;">Titik-titik ini adalah 15 fitur (6 GLCM + 9 HSV) yang direduksi menjadi 2 sumbu. Warna menunjukkan label kelas asli (ground truth).</p>
                     <canvas id="pcaScatterChart"></canvas>
                 </div>
                 
@@ -201,6 +235,6 @@
         </main>
     </div>
 
-    <script src="{{ url_for('static', filename='script.js') }}?v=3"></script>
+    <script src="{{ url_for('static', filename='script.js') }}?v=4"></script>
 </body>
 </html>

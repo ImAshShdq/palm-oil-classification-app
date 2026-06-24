@@ -10,36 +10,31 @@ app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max upload
 
 # Paths
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
-KMEANS_PATH = os.path.join(MODELS_DIR, 'kmeans_model.pkl')
+KNN_PATH = os.path.join(MODELS_DIR, 'knn_model.pkl')
 SCALER_PATH = os.path.join(MODELS_DIR, 'scaler.pkl')
-THRESHOLD_PATH = os.path.join(MODELS_DIR, 'threshold.json')
 PCA_PATH = os.path.join(MODELS_DIR, 'pca_model.pkl')
 HSV_VALIDATION_PATH = os.path.join(MODELS_DIR, 'hsv_validation.json')
 
 # Load models if they exist
-kmeans = None
+knn = None
 scaler = None
 pca = None
-threshold = None
 hsv_validation = None
 
 try:
-    with open(KMEANS_PATH, 'rb') as f:
-        kmeans = pickle.load(f)
+    with open(KNN_PATH, 'rb') as f:
+        knn = pickle.load(f)
     with open(SCALER_PATH, 'rb') as f:
         scaler = pickle.load(f)
     with open(PCA_PATH, 'rb') as f:
         pca = pickle.load(f)
-    with open(THRESHOLD_PATH, 'r') as f:
-        threshold_data = json.load(f)
-        threshold = threshold_data.get('distance_threshold', 10.0)
     with open(HSV_VALIDATION_PATH, 'r') as f:
         hsv_validation = json.load(f)
 except Exception as e:
     print(f"Warning: Models not found or error loading models. {e}")
 
-# Heuristic mapping for clusters as requested by user
-CLUSTER_MAPPING = {
+# Label mapping
+LABEL_NAMES = {
     0: "Matang",
     1: "Mengkal",
     2: "Mentah"
@@ -84,7 +79,7 @@ def validate_hsv_color(hsv_dict):
             'train_range': [rng.get('p1', 0), rng.get('p99', 0)]
         }
     
-    # Adding 50% margin similar to PCA threshold
+    # Adding 50% margin similar to original implementation
     is_valid = mean_z <= hsv_threshold * 1.5
     
     return is_valid, mean_z, detail
@@ -97,7 +92,7 @@ def index():
 def get_dashboard_data():
     eval_path = os.path.join(MODELS_DIR, 'evaluation_metrics.json')
     if not os.path.exists(eval_path):
-        return jsonify({"error": "Dashboard data not found. Please run train_kmeans.py first."}), 404
+        return jsonify({"error": "Dashboard data not found. Please run train_knn.py first."}), 404
     with open(eval_path, 'r') as f:
         data = json.load(f)
     
@@ -112,8 +107,8 @@ def get_dashboard_data():
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
-    if kmeans is None or scaler is None or pca is None:
-        return jsonify({"error": "Model K-Means belum dilatih secara utuh. Harap jalankan ml_pipeline/train_kmeans.py"}), 500
+    if knn is None or scaler is None:
+        return jsonify({"error": "Model KNN belum dilatih. Harap jalankan ml_pipeline/train_knn.py"}), 500
         
     if 'image' not in request.files:
         return jsonify({"error": "Tidak ada file gambar yang diunggah"}), 400
@@ -145,45 +140,44 @@ def predict():
             "hsv_features": hsv_dict,
         }), 400
         
-    # Scale feature (15-dimensional vector)
+    # Scale features (15-dimensional vector)
     X_scaled = scaler.transform([combined_vec])
     
-    # Calculate PCA coordinates for the uploaded image
-    X_pca = pca.transform(X_scaled)[0]
-    pca_x = float(X_pca[0])
-    pca_y = float(X_pca[1])
+    # KNN Prediction
+    predicted_label = int(knn.predict(X_scaled)[0])
+    probabilities = knn.predict_proba(X_scaled)[0]
+    confidence = float(np.max(probabilities))
     
-    # K-Means distance and cluster in PCA space
-    distances = kmeans.transform([[pca_x, pca_y]])[0]
-    min_dist = float(np.min(distances))
-    cluster_id = int(np.argmin(distances))
+    # Get label name
+    label = LABEL_NAMES.get(predicted_label, "Tidak Diketahui")
     
-    # Validation Tekstur (PCA distance)
-    # If the distance is much larger than the threshold, it's an outlier (not palm oil)
-    if min_dist > threshold * 1.5:  # Adding 50% margin for robustness on new data
-        return jsonify({
-            "valid": False,
-            "error": "Tekstur gambar tidak dikenali sebagai kelapa sawit. Silakan unggah gambar yang sesuai.",
-            "hsv_valid": True,
-            "hsv_distance": hsv_distance,
-            "features": glcm_dict,
-            "hsv_features": hsv_dict,
-        }), 400
-        
-    label = CLUSTER_MAPPING.get(cluster_id, "Tidak Diketahui")
+    # PCA coordinates for visualization (if PCA model exists)
+    pca_x = None
+    pca_y = None
+    if pca is not None:
+        X_pca = pca.transform(X_scaled)[0]
+        pca_x = float(X_pca[0])
+        pca_y = float(X_pca[1])
+    
+    # Build probability breakdown per class
+    proba_detail = {}
+    for i, prob in enumerate(probabilities):
+        class_name = LABEL_NAMES.get(i, f"Class {i}")
+        proba_detail[class_name] = float(prob)
     
     return jsonify({
         "valid": True,
         "label": label,
-        "cluster_id": cluster_id,
-        "distance": min_dist,
+        "predicted_label": predicted_label,
+        "confidence": confidence,
+        "probabilities": proba_detail,
         "features": glcm_dict,
         "hsv_features": hsv_dict,
         "hsv_valid": True,
         "hsv_distance": hsv_distance,
         "hsv_detail": hsv_detail,
         "pca_x": pca_x,
-        "pca_y": pca_y
+        "pca_y": pca_y,
     })
 
 if __name__ == '__main__':

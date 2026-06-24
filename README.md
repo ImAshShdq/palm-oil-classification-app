@@ -2,9 +2,11 @@
 
 Aplikasi web cerdas untuk mengidentifikasi objek sebagai buah kelapa sawit dan mengklasifikasikan tingkat kematangannya (Matang, Mengkal, Mentah) berdasarkan analisis gambar.
 
+![Tampilan Aplikasi SawitRipe](assets/app_preview.png)
+
 ## 🌟 Cara Kerja Aplikasi
 
-Aplikasi ini menggunakan kombinasi analisis tekstur (GLCM), analisis distribusi warna (HSV), dan algoritma _Unsupervised Machine Learning_ (K-Means Clustering) untuk melakukan prediksi.
+Aplikasi ini menggunakan kombinasi analisis tekstur (GLCM), analisis distribusi warna (HSV), dan algoritma _Supervised Machine Learning_ (**K-Nearest Neighbors / KNN**) untuk melakukan prediksi.
 
 Arsitektur sistem dibagi menjadi dua tahap utama: **Validasi Objek** dan **Klasifikasi Kematangan**.
 
@@ -15,26 +17,24 @@ Setiap gambar yang diunggah akan diekstrak 15 fiturnya:
 *   **9 Fitur Warna HSV (Hue, Saturation, Value)**: Mengukur distribusi warna.
     *   *Mean, Standard Deviation, dan Skewness* untuk masing-masing channel H, S, dan V.
 
-### 2. Validasi Objek (Dual-Gate Validation)
-Sistem memiliki mekanisme pertahanan untuk mengenali apakah gambar yang diinput benar-benar kelapa sawit atau bukan (misalnya gambar batu, wajah, atau objek lain). Sistem menggunakan gerbang logika **AND** untuk 2 validasi:
+### 2. Validasi Objek (HSV Color Validation)
+Sistem memiliki mekanisme pertahanan untuk mengenali apakah gambar yang diinput benar-benar kelapa sawit atau bukan (misalnya gambar batu, wajah, atau objek lain):
 
-1.  **Validasi Warna (HSV Z-Score):**
+*   **Validasi Warna (HSV Z-Score):**
     *   Distribusi warna (9 fitur HSV) dari gambar input dibandingkan dengan rata-rata dan standar deviasi dari *seluruh* data latih kelapa sawit.
-    *   Jika jarak _Z-Score_ melebihi ambang batas (Threshold ke-99 percentile) dari data latih, maka gambar ditolak karena **"Warna tidak cocok"** (contoh: warnanya ungu/biru padahal sawit harusnya dominan merah/oranye/hijau).
-2.  **Validasi Tekstur (Jarak PCA K-Means):**
-    *   Jika warna lolos, fitur gabungan (GLCM + HSV) direduksi dimensinya menjadi 2D menggunakan PCA (_Principal Component Analysis_).
-    *   Titik 2D ini diukur jaraknya ke titik pusat (centroid) terdekat di model K-Means.
-    *   Jika jaraknya melebihi ambang batas model, gambar ditolak karena **"Tekstur tidak cocok"**.
+    *   Jika jarak _Z-Score_ melebihi ambang batas (Threshold ke-99 percentile) dari data latih, maka gambar ditolak karena **"Warna tidak cocok"**.
 
-> Jika salah satu validasi gagal, objek dianggap **Bukan Kelapa Sawit**. Keduanya harus lolos agar masuk ke tahap klasifikasi.
+> Jika validasi gagal, objek dianggap **Bukan Kelapa Sawit**. Harus lolos agar masuk ke tahap klasifikasi.
 
-### 3. Klasifikasi Kematangan (K-Means Clustering)
-Jika gambar divalidasi sebagai kelapa sawit, model **K-Means (K=3)** akan menentukan tingkat kematangan berdasarkan klaster terdekat di ruang PCA. 
+### 3. Klasifikasi Kematangan (KNN)
+Jika gambar divalidasi sebagai kelapa sawit, model **KNN** akan menentukan tingkat kematangan berdasarkan 15 fitur yang telah di-scaling.
 
-Klaster tidak ditentukan secara statis, melainkan diurutkan secara dinamis berdasarkan nilai **Mean Hue** (Rata-rata warna murni) dari tiap titik pusat klaster (centroid):
-*   **Klaster 0 (Matang):** Memiliki nilai Hue terendah (dominan merah / oranye kemerahan).
-*   **Klaster 1 (Mengkal):** Memiliki nilai Hue menengah (warna transisi).
-*   **Klaster 2 (Mentah):** Memiliki nilai Hue tertinggi (dominan hijau gelap / kuning kehijauan).
+Label ditentukan dari nama file dataset (supervised learning):
+*   **Label 0 (Matang):** `berondol_10` — Buah matang, warna merah jingga / oranye.
+*   **Label 1 (Mengkal):** `berondol_5` — Buah setengah matang, warna oranye kehijauan.
+*   **Label 2 (Mentah):** `berondol_1` — Buah mentah, warna kehitaman.
+
+KNN juga memberikan **confidence score** (tingkat keyakinan prediksi) berdasarkan probabilitas tetangga terdekat.
 
 ---
 
@@ -48,24 +48,23 @@ palmoil-classification-app/
 ├── README.md                   # Dokumentasi ini
 │
 ├── dataset/                    # Folder Data Gambar
-│   ├── train/                  # Data latih K-Means
-│   └── test/                   # Data uji
+│   ├── train/                  # Data latih (berlabel dari nama file)
+│   └── test/                   # Data uji (berlabel dari nama file)
 │
 ├── ml_pipeline/                # Logika Machine Learning
 │   ├── extract_features.py     # Wrapper ekstraksi GLCM & HSV
-│   ├── extract_hsv_features.py # Modul khusus ekstraksi distribusi warna HSV (Mean, Std, Skew)
-│   └── train_kmeans.py         # Script untuk melatih model, membuat threshold, & mapping label
+│   ├── extract_hsv_features.py # Modul khusus ekstraksi distribusi warna HSV
+│   └── train_knn.py            # Script untuk melatih model KNN & evaluasi
 │
 ├── models/                     # Model tersimpan (.pkl & .json) hasil training
-│   ├── kmeans_model.pkl        
-│   ├── pca_model.pkl
-│   ├── scaler.pkl
-│   ├── threshold.json          # Threshold validasi tekstur
+│   ├── knn_model.pkl           # Model KNN
+│   ├── pca_model.pkl           # PCA (untuk visualisasi scatter plot)
+│   ├── scaler.pkl              # StandardScaler
 │   ├── hsv_validation.json     # Threshold validasi distribusi warna
-│   └── evaluation_metrics.json # Data dashboard (Silhouette score, scatter, dll)
+│   └── evaluation_metrics.json # Data dashboard (Accuracy, Confusion Matrix, dll)
 │
 ├── static/                     # Aset Frontend
-│   ├── style.css               # Styling UI (Card, Badges, HSV Channel colors)
+│   ├── style.css               # Styling UI
 │   └── script.js               # Logika UI (Upload, Render Metrics, Chart.js)
 │
 └── templates/                  # File HTML
@@ -84,12 +83,16 @@ Pastikan Python 3 sudah terinstal. Buka terminal dan masuk ke direktori proyek.
 pip install -r requirements.txt
 ```
 
-### 3. Latih Ulang Model (Opsional)
-Jika Anda menambahkan gambar baru ke folder `dataset/train/`, latih ulang model dengan perintah:
+### 3. Latih Model KNN
 ```bash
-python3 ml_pipeline/train_kmeans.py
+cd ml_pipeline
+python3 train_knn.py
 ```
-Proses ini akan mengekstrak fitur, melatih K-Means, menghitung PCA, dan menghasilkan file JSON validasi (`hsv_validation.json` & `threshold.json`).
+Proses ini akan:
+- Mengekstrak fitur GLCM + HSV dari semua gambar
+- Mencari nilai K terbaik melalui cross-validation
+- Melatih KNN dan mengevaluasi pada data test
+- Menghasilkan metrik evaluasi (Accuracy, Confusion Matrix, dll)
 
 ### 4. Jalankan Server Web
 ```bash
@@ -106,7 +109,10 @@ Anda bisa langsung melakukan _Drag and Drop_ gambar untuk memprediksi kematangan
 ---
 
 ## 🔬 Metrik Tampilan Dasbor
-Pada halaman utama bagian bawah, aplikasi menampilkan dasbor evaluasi model yang dibentuk dari hasil _training_:
-- **Silhouette Score:** Mengukur seberapa padat dan terpisahnya klaster (mendekati 1 semakin baik).
-- **Distribusi Data:** Grafik batang jumlah data latih dan prediksi data uji.
-- **Visualisasi PCA (Live Scatter Plot):** Memetakan posisi sebaran gambar di ruang 2D. Gambar yang Anda unggah secara _real-time_ akan muncul sebagai ikon ⭐ di grafik ini.
+Pada halaman utama bagian bawah, aplikasi menampilkan dasbor evaluasi model:
+- **Accuracy:** Persentase prediksi yang benar pada data uji.
+- **F1 Score:** Harmonik rata-rata Precision dan Recall.
+- **Best K:** Nilai K optimal dari cross-validation.
+- **Confusion Matrix:** Tabel perbandingan label asli vs prediksi.
+- **Per-Class Metrics:** Precision, Recall, F1 per kelas (Matang/Mengkal/Mentah).
+- **Visualisasi PCA (Live Scatter Plot):** Memetakan posisi sebaran gambar di ruang 2D.

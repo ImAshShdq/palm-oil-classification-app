@@ -2,3 +2,8 @@ dataset
 models
 modul-belajar
 bahan-input
+.venv
+__pycache__/
+*.pyc
+.DS_Store
+ml_pipeline/__pycache__/
